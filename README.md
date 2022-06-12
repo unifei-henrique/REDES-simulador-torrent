@@ -1,6 +1,6 @@
 # Simulador Torrent
 
-Trabalho de COM240 - Redes de Computadores.
+Trabalho de COM240 - Redes de Computadores.  
 Implementa um cliente e servidor para transferência de arquivos.
 
 ## Grupo
