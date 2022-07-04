@@ -9,64 +9,54 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define PORT 1337
-
-int checksum(char pacote[], int size) {
-  int soma = 0;
-
-  for (int i = 0; i < size; i++) {
-    soma += pacote[i];
-    soma %= 128;
-  }
-
-  return soma;
-}
+#include "compartilhado.h"
 
 int main(int argc, char const *argv[]) {
-  int server_socket, binder, listener, porta;
-  struct sockaddr_in serv_addr, cli_addr;
-  char nome_arquivo[30];
+  int socket_servidor, binder, listener, porta;
+  struct sockaddr_in servidor, cliente;
   socklen_t clilen;
   ssize_t ler_bytes;
+  char nome_arquivo[30];
 
   //***************************************************************
   //					  ABERTURA DE CONEXÃO
   //***************************************************************
-  server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+  socket_servidor = socket(AF_INET, SOCK_DGRAM, 0);
 
-  if (server_socket <= 0) {
+  if (socket_servidor <= 0) {
     printf("Erro na abertura do socket: %s\n", strerror(errno));
     exit(1);
-  } else if (server_socket) {
+  } else if (socket_servidor) {
     do {
       printf("Aguardando cliente...\n");
     } while (!accept);
   }
 
-  bzero(&serv_addr, sizeof(serv_addr));
+  bzero(&servidor, sizeof(servidor));
 
-  serv_addr.sin_family = AF_INET;
-  serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  serv_addr.sin_port = htons(PORT);
+  servidor.sin_family = AF_INET;
+  servidor.sin_addr.s_addr = htonl(INADDR_ANY);
+  servidor.sin_port = htons(PORT);
 
   binder =
-      bind(server_socket, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+      bind(socket_servidor, (struct sockaddr *)&servidor, sizeof(servidor));
   if (binder < 0) {
     printf("Erro no Bind: %s\n", strerror(errno));
     exit(1);
   }
-  clilen = sizeof(cli_addr);
-  ler_bytes = recvfrom(server_socket, &nome_arquivo, 20, 0,
-                       (struct sockaddr *)&cli_addr, &clilen);
+  clilen = sizeof(cliente);
+  ler_bytes = recvfrom(socket_servidor, &nome_arquivo, 20, 0,
+                       (struct sockaddr *)&cliente, &clilen);
 
   //***************************************************************
   //					  FIM ABERTURA DE CONEXÃO
   //***************************************************************
   FILE *file;
-  int nPacotes = 0, tam_buffer = 4096;
+  int numero_pacotes = 0;
+  int tamanho_buffer = 4096;
   long long int tamanho_arquivo;
-  char str[4096];
-  char pacote[4100];
+  // char str[4096];
+  char pacote[4106];
 
   ssize_t escrever;
   ssize_t resposta;
@@ -83,11 +73,11 @@ int main(int argc, char const *argv[]) {
   printf("%s\n", nome_arquivo);
 
   if (!file) {
-    resposta = sendto(server_socket, "Arquivo nao existe", 18, 0,
-                      (struct sockaddr *)&cli_addr, sizeof(cli_addr));
+    resposta = sendto(socket_servidor, "Arquivo nao existe", 18, 0,
+                      (struct sockaddr *)&cliente, sizeof(cliente));
   } else {
-    resposta = sendto(server_socket, "Arquivo aberto com sucesso", 26, 0,
-                      (struct sockaddr *)&cli_addr, sizeof(cli_addr));
+    resposta = sendto(socket_servidor, "Arquivo aberto com sucesso", 26, 0,
+                      (struct sockaddr *)&cliente, sizeof(cliente));
   }
   if (resposta <= 0) {
     printf("Erro no read: %s\n", strerror(errno));
@@ -95,42 +85,42 @@ int main(int argc, char const *argv[]) {
   }
 
   memset(pacote, 0, sizeof pacote);
-  fseek(file, 0, SEEK_END);          // Jump to the end of the file
-  tamanho_arquivo = ftell(file);             // Get the current byte offset in the file
-  rewind(file); 
+  fseek(file, 0, SEEK_END);       // Jump to the end of the file
+  tamanho_arquivo = ftell(file);  // Get the current byte offset in the file
+  rewind(file);
 
   printf("Tamanho do arquivo:%lld\n", tamanho_arquivo);
   while (pacote[4097] == 0) {  // LOOP DE ESCREVER E ENVIAR PACOTES
-    fread(pacote, tam_buffer, 1, file);
+    fread(pacote, tamanho_buffer, 1, file);
 
-    pacote[4096] =
-        checksum(pacote, tam_buffer);  // Campo de verificação 1 (checksum)
-    pacote[4098] = nPacotes; //Campo de verificação 3 (nº de sequencia)
+    // Campo de verificação 1 (checksum)
+    pacote[4096] = checksum(pacote, tamanho_buffer);
+    pacote[4098] = numero_pacotes;  // Campo de verificação 3 (nº de sequencia)
 
-    printf("Tamanho enviado: %d\n", tam_buffer * nPacotes);
-    if (tam_buffer * nPacotes + tam_buffer < tamanho_arquivo)
+    printf("Tamanho enviado: %d\n", tamanho_buffer * numero_pacotes);
+    if (tamanho_buffer * numero_pacotes + tamanho_buffer < tamanho_arquivo)
       pacote[4097] = 0;  // Campo de verificação 2 se eh o ultimo pacote
 
     else                 // Se for ultimo pacote
       pacote[4097] = 1;  // Campo de verificação 2 se eh o ultimo pacote
 
     while (1) {
-      escrever = sendto(server_socket, pacote, sizeof(pacote), 0,
-                        (struct sockaddr *)&cli_addr, sizeof(cli_addr));
+      escrever = sendto(socket_servidor, pacote, sizeof(pacote), 0,
+                        (struct sockaddr *)&cliente, sizeof(cliente));
       if (escrever <= 0)
         printf("Erro ao enviar, tentando novamente\n");
       else {
-        nPacotes++;
+        numero_pacotes++;
         break;
       }
     }
   }
 
   printf("Arquivo enviado com sucesso\n");
-  printf("%d\n", nPacotes);
+  printf("%d\n", numero_pacotes);
 
   fclose(file);
-  close(server_socket);
+  close(socket_servidor);
 
   return 0;
 }
