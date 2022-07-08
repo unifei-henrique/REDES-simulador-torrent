@@ -24,15 +24,30 @@ int checksum(char pacote[], int size) {
   return soma;
 }
 
+long encontrar_maior(long *vetor, long tamanho, long numero_sequencia) {
+  long maior = -1;
+  for (long i = 0; i < tamanho; i++) {
+    if (vetor[i] > maior && vetor[i] < numero_sequencia) {
+      maior = vetor[i];
+    }
+  }
+  return maior;
+}
+
 typedef enum { false, true } bool;
 
 int main() {
   struct sockaddr_in servidor;
   ssize_t ler_bytes, escrever_bytes;
   int porta, conector, socket_cliente, binder;
-  int numero_pacotes = 0;
+  long pacote_atual = 0, numero_pacotes = 0;
   int tamanho_buffer = 4096;
+  unsigned long numero_sequencia;
+  long *pacotes_recebidos;
+  long vetor_zerado[4096];
   char nome_arquivo[200], resposta[30];
+
+  memset(vetor_zerado, 0, 4096);
 
   socket_cliente = socket(AF_INET, SOCK_DGRAM,
                           0);  // Cria uma conexão socket no socket_cliente
@@ -100,7 +115,12 @@ int main() {
 
   file = fopen(nome_arquivo, "wb");
 
-  while (1) {
+  ler = recvfrom(socket_cliente, &numero_pacotes, sizeof(long), 0,
+                 (struct sockaddr *)&servidor, &servlen);
+
+  pacotes_recebidos = malloc(numero_pacotes * sizeof(long));
+
+  while (pacote_atual != numero_pacotes) {
     int contador = 0;
 
     ler = recvfrom(socket_cliente, pacote, sizeof(pacote), 0,
@@ -111,39 +131,31 @@ int main() {
         printf("Falha ao transferir arquivo checksum não bateu\n");
         return 0;
       }
-
-      /*
-        Pacotes vem fora de ordem, precisamos escrever o arquivo
-        pacote a pacote sem ser sequencial, escrever em: numero de sequencia *
-        4096
-      */
-
       contador++;
-      printf("Pacote corrompido, tentativa %d\n", contador);
-      ler = recvfrom(socket_cliente, pacote, sizeof(pacote), 0,
-                     (struct sockaddr *)&servidor, &servlen);
     }
 
     // Converte ultimos 8 bytes em int
-    unsigned long int numero_sequencia =
+    numero_sequencia =
         (pacote[4098] << 56) | ((pacote[4099] & 0xFF) << 48) |
         ((pacote[4100] & 0xFF) << 40) | ((pacote[4101] & 0xFF) << 32) |
         ((pacote[4102] & 0xFF) << 24) | ((pacote[4103] & 0xFF) << 16) |
         ((pacote[4104] & 0xFF) << 8) | (pacote[4105] & 0xFF);
 
-    numero_pacotes++;
+    pacotes_recebidos[pacote_atual] = numero_sequencia;
+
+    long maior =
+        encontrar_maior(pacotes_recebidos, pacote_atual, numero_sequencia);
+    long diferenca = maior - numero_sequencia - 1;
+
+    fseek(file, maior * 4096, SEEK_SET);
+    fwrite(vetor_zerado, diferenca, 4096, file);
+
+    fseek(file, numero_sequencia * 4096, SEEK_SET);
     fwrite(pacote, 1, 4096, file);
 
-    if (pacote[4097] == 1) {
-      printf("Ultimo pacote = %d\n", numero_pacotes);
-      break;
-    }
-
-    // ack[0] = 1;
-    // ack[1] = pacote[];
-    // write(socket_cliente,ack,sizeof(ack));
+    pacote_atual++;
   }
-  printf("Pacotes: %d\n", numero_pacotes);
+  printf("Pacotes: %ld\n", pacote_atual);
   printf("done\n");
 
   fclose(file);

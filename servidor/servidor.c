@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
+#include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -65,9 +66,9 @@ int main(int argc, char const *argv[]) {
   //					  FIM ABERTURA DE CONEXÃO
   //***************************************************************
   FILE *file;
-  long int numero_pacotes = 0;
+  long numero_pacotes = 0, pacote_atual = 0;
   int tamanho_buffer = 4096;
-  long long int tamanho_arquivo;
+  long tamanho_arquivo;
   // char str[4096];
   char pacote[4106];
 
@@ -102,39 +103,33 @@ int main(int argc, char const *argv[]) {
   tamanho_arquivo = ftell(file);  // Get the current byte offset in the file
   rewind(file);
 
-  printf("Tamanho do arquivo:%lld\n", tamanho_arquivo);
+  numero_pacotes = (tamanho_arquivo + (tamanho_arquivo % 4096)) / 4096;
+
+  escrever = sendto(socket_servidor, &numero_pacotes, sizeof(long), 0,
+                    (struct sockaddr *)&cliente, sizeof(cliente));
+
+  printf("Tamanho do arquivo:%ld\n", tamanho_arquivo);
   while (pacote[4097] == 0) {  // LOOP DE ESCREVER E ENVIAR PACOTES
     fread(pacote, tamanho_buffer, 1, file);
 
     // Campo de verificação 1 (checksum)
     pacote[4096] = checksum(pacote, tamanho_buffer);
 
-    // Transformando long int em char
-    pacote[4098] = (numero_pacotes >> 56) & 0xFF;
-    pacote[4099] = (numero_pacotes >> 48) & 0xFF;
-    pacote[4100] = (numero_pacotes >> 40) & 0xFF;
-    pacote[4101] = (numero_pacotes >> 32) & 0xFF;
-    pacote[4102] = (numero_pacotes >> 24) & 0xFF;
-    pacote[4103] = (numero_pacotes >> 16) & 0xFF;
-    pacote[4104] = (numero_pacotes >> 8) & 0xFF;
-    pacote[4105] = numero_pacotes & 0xFF;
+    // Transformando long em char
+    pacote[4098] = (pacote_atual >> 56) & 0xFF;
+    pacote[4099] = (pacote_atual >> 48) & 0xFF;
+    pacote[4100] = (pacote_atual >> 40) & 0xFF;
+    pacote[4101] = (pacote_atual >> 32) & 0xFF;
+    pacote[4102] = (pacote_atual >> 24) & 0xFF;
+    pacote[4103] = (pacote_atual >> 16) & 0xFF;
+    pacote[4104] = (pacote_atual >> 8) & 0xFF;
+    pacote[4105] = pacote_atual & 0xFF;
 
-    // unsigned long int numero_sequencia =
-    //     (pacote[4098] << 56) | ((pacote[4099] & 0xFF) << 48) |
-    //     ((pacote[4100] & 0xFF) << 40) | ((pacote[4101] & 0xFF) << 32) |
-    //     ((pacote[4102] & 0xFF) << 24) | ((pacote[4103] & 0xFF) << 16) |
-    //     ((pacote[4104] & 0xFF) << 8) | (pacote[4105] & 0xFF);
-
-    if (numero_pacotes == 512) {
-      printf("oi");
-    }
-
-    printf("Tamanho enviado: %ld\n", tamanho_buffer * numero_pacotes);
-    if (tamanho_buffer * numero_pacotes + tamanho_buffer < tamanho_arquivo)
+    printf("Tamanho enviado: %ld\n", tamanho_buffer * pacote_atual);
+    if (numero_pacotes != pacote_atual)
       pacote[4097] = 0;  // Campo de verificação 2 se eh o ultimo pacote
-
-    else                 // Se for ultimo pacote
-      pacote[4097] = 1;  // Campo de verificação 2 se eh o ultimo pacote
+    else
+      pacote[4097] = 1;
 
     while (1) {
       escrever = sendto(socket_servidor, pacote, sizeof(pacote), 0,
@@ -142,7 +137,7 @@ int main(int argc, char const *argv[]) {
       if (escrever <= 0)
         printf("Erro ao enviar, tentando novamente\n");
       else {
-        numero_pacotes++;
+        pacote_atual++;
         break;
       }
     }
