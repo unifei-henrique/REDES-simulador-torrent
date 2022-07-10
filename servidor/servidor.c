@@ -10,8 +10,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-// #include "compartilhado.h"
-
 #define PORT 1337
 
 int checksum(char pacote[], int size) {
